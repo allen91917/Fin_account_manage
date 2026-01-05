@@ -57,15 +57,12 @@ def build_exe():
     # PyInstaller 參數配置
     pyinstaller_args = [
         'main.py',                          # 主程式文件
-        '--name=返點系統',                   # 輸出的 exe 名稱
+        '--name=main',                      # 輸出的 exe 名稱
         '--onefile',                        # 打包成單一執行文件
-        '--console',                       # 顯示控制台視窗
+        '--console',                        # 顯示控制台視窗
         '--icon=NONE',                      # 圖標（如有需要可以指定 .ico 文件）
         '--clean',                          # 清理臨時文件
         '--noconfirm',                      # 不詢問確認
-        
-        # 包含資料文件
-        '--add-data=用戶資訊.txt;.',         # Windows 使用分號，將文件包含到根目錄
         
         # 隱藏導入（確保這些模組被包含）
         '--hidden-import=selenium',
@@ -98,16 +95,19 @@ def build_exe():
         print("✓ 打包成功！")
         print("="*60)
         print("\n打包文件位置:")
-        print(f"  - 可執行文件: {os.path.abspath('dist/返點系統.exe')}")
+        print(f"  - 可執行文件: {os.path.abspath('dist/main.exe')}")
         print("\n使用說明:")
-        print("  1. 將 dist 資料夾中的 '返點系統.exe' 複製到 Windows 電腦")
-        print("  2. 確保 '用戶資訊.txt' 在相同目錄下（已內建，但也可外部提供）")
+        print("  1. 將 dist 資料夾整個複製到 Windows 電腦")
+        print("  2. dist 資料夾中包含:")
+        print("     - main.exe (主程式)")
+        print("     - 用戶資訊.txt (帳號設定檔)")
         print("  3. 確保 Windows 電腦已安裝 Google Chrome 瀏覽器")
-        print("  4. 雙擊 '返點系統.exe' 執行")
+        print("  4. 雙擊 'main.exe' 執行")
         print("\n注意事項:")
         print("  - 首次執行時，會自動下載 ChromeDriver")
         print("  - 確保有穩定的網路連接")
         print("  - 建議在 Windows 10/11 64位元系統上運行")
+        print("  - 支援中文路徑環境")
         return True
         
     except subprocess.CalledProcessError as e:
@@ -118,65 +118,35 @@ def build_exe():
         return False
 
 
-def create_readme():
-    """創建使用說明文件"""
-    readme_content = """返點系統 使用說明
-==================
-
-系統需求：
----------
-1. Windows 10/11 64位元作業系統
-2. Google Chrome 瀏覽器（最新版本）
-3. 穩定的網路連接
-
-使用步驟：
----------
-1. 準備 '用戶資訊.txt' 文件（如果需要修改帳號資訊）
-   格式：帳號,密碼,金額
-   範例：
-   user1,pass123,5000
-   user2,pass456,8000
-   # 開頭為註解行，會被忽略
-
-2. 雙擊執行 '返點系統.exe'
-
-3. 程式會自動：
-   - 初始化 Chrome 瀏覽器
-   - 登入各個帳號
-   - 處理會員餘額調整
-   - 完成後自動關閉
-
-注意事項：
----------
-- 首次執行時會自動下載 ChromeDriver，需要網路連接
-- 執行期間不要關閉瀏覽器視窗
-- 如遇到問題，請檢查 '用戶資訊.txt' 格式是否正確
-- 建議執行時關閉防毒軟體或將此程式加入白名單
-
-常見問題：
----------
-Q: 程式無法啟動？
-A: 確認已安裝 Google Chrome 瀏覽器
-
-Q: 顯示帳號密碼錯誤？
-A: 檢查 '用戶資訊.txt' 中的帳號密碼是否正確
-
-Q: 處理速度很慢？
-A: 多線程同時處理多個帳號，請耐心等待
-
-聯絡支援：
----------
-如有問題請聯絡系統管理員
-"""
-    
+def copy_user_info():
+    """複製用戶資訊.txt到dist資料夾"""
     try:
-        readme_path = os.path.join('dist', '使用說明.txt')
-        if os.path.exists('dist'):
-            with open(readme_path, 'w', encoding='utf-8') as f:
-                f.write(readme_content)
-            print(f"✓ 已創建使用說明: {readme_path}")
+        if not os.path.exists('dist'):
+            print("✗ dist 資料夾不存在")
+            return False
+        
+        if os.path.exists('用戶資訊.txt'):
+            shutil.copy2('用戶資訊.txt', 'dist/用戶資訊.txt')
+            print("✓ 已複製 用戶資訊.txt 到 dist 資料夾")
+            return True
+        else:
+            print("⚠ 警告: 找不到 用戶資訊.txt，請手動放置到 dist 資料夾")
+            # 創建範例文件
+            sample_content = """# 用戶資訊設定檔
+# 格式：帳號,密碼,目標金額
+# 範例：
+# user1,password123,5000
+# user2,password456,8000
+
+# 請在下方填寫實際的帳號資訊
+"""
+            with open('dist/用戶資訊.txt', 'w', encoding='utf-8') as f:
+                f.write(sample_content)
+            print("✓ 已創建範例 用戶資訊.txt 到 dist 資料夾")
+            return True
     except Exception as e:
-        print(f"✗ 創建使用說明失敗: {e}")
+        print(f"✗ 複製用戶資訊.txt失敗: {e}")
+        return False
 
 
 def main():
@@ -207,11 +177,30 @@ def main():
     success = build_exe()
     
     if success:
-        # 創建使用說明
-        create_readme()
+        # 複製用戶資訊檔案
+        copy_user_info()
+        
+        # 清理緩存檔案，只保留 dist
+        print("\n清理緩存檔案...")
+        folders_to_clean = ['build', '__pycache__']
+        for folder in folders_to_clean:
+            if os.path.exists(folder):
+                shutil.rmtree(folder)
+                print(f"✓ 已刪除 {folder}")
+        
+        # 清理 .spec 文件
+        for spec_file in Path('.').glob('*.spec'):
+            spec_file.unlink()
+            print(f"✓ 已刪除 {spec_file}")
         
         print("\n" + "="*60)
-        print("打包完成！請到 dist 資料夾查看結果")
+        print("打包完成！")
+        print("="*60)
+        print("\n最終檔案結構:")
+        print("dist/")
+        print("  ├── main.exe")
+        print("  └── 用戶資訊.txt")
+        print("\n請將整個 dist 資料夾複製到 Windows 電腦使用")
         print("="*60)
     else:
         print("\n打包失敗，請檢查錯誤訊息")
