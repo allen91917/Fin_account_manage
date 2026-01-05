@@ -11,16 +11,19 @@ from datetime import datetime
 import subprocess
 import logging
 from webdriver_manager.chrome import ChromeDriverManager
+from threading import Thread
+import threading
 
 
 def load_user_info():
-    """從用戶資訊.txt讀取帳號、密碼和金額"""
+    """從用戶資訊.txt讀取所有帳號、密碼和金額"""
+    accounts = []
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         file_path = os.path.join(script_dir, '用戶資訊.txt')
         
         with open(file_path, 'r', encoding='utf-8') as file:
-            for line in file:
+            for line_num, line in enumerate(file, 1):
                 line = line.strip()
                 # 跳過空行和註解行
                 if not line or line.startswith('#'):
@@ -32,18 +35,22 @@ def load_user_info():
                     account = parts[0].strip()
                     password = parts[1].strip()
                     amount = int(parts[2].strip())
-                    print(Fore.GREEN + f"讀取成功 - 帳號: {account}, 金額: {amount}" + Style.RESET_ALL)
-                    return account, password, amount
+                    accounts.append((account, password, amount))
+                    print(Fore.GREEN + f"讀取帳號 #{len(accounts)} - 帳號: {account}, 金額: {amount}" + Style.RESET_ALL)
         
-        print(Fore.RED + "未找到有效的用戶資訊" + Style.RESET_ALL)
-        return None, None, None
+        if not accounts:
+            print(Fore.RED + "未找到有效的用戶資訊" + Style.RESET_ALL)
+        else:
+            print(Fore.GREEN + f"\n總共讀取 {len(accounts)} 個帳號" + Style.RESET_ALL)
+        
+        return accounts
         
     except FileNotFoundError:
         print(Fore.RED + "找不到 用戶資訊.txt 檔案" + Style.RESET_ALL)
-        return None, None, None
+        return []
     except Exception as e:
         print(Fore.RED + f"讀取用戶資訊時發生錯誤: {e}" + Style.RESET_ALL)
-        return None, None, None
+        return []
 
 
 def init_environment():
@@ -341,55 +348,87 @@ def process_member_balances(driver, target_amount=5000):
         raise
 
 
-def main():
-    """主程式入口"""
-    init_environment()
-    
-    # 從檔案讀取帳號資料
-    print(Fore.CYAN + "正在讀取用戶資訊..." + Style.RESET_ALL)
-    username, password, target_amount = load_user_info()
-    
-    if not username or not password or not target_amount:
-        print(Fore.RED + "無法讀取用戶資訊，程式結束" + Style.RESET_ALL)
-        input("\n按 Enter 結束...")
-        return
-    
+def process_account(account_num, username, password, target_amount):
+    """處理單一帳號的函數(用於多線程)"""
     driver = None
+    thread_id = threading.current_thread().name
+    prefix = f"[帳號{account_num}-{username}]"
+    
     try:
-        print(f"\n{'='*50}")
-        print(Fore.YELLOW + f"開始登入系統" + Style.RESET_ALL)
-        print(f"{'='*50}\n")
+        print(Fore.CYAN + f"\n{prefix} 開始處理..." + Style.RESET_ALL)
         
         # 初始化瀏覽器
         driver = init_driver()
         
         # 登入系統
+        print(Fore.CYAN + f"{prefix} 正在登入..." + Style.RESET_ALL)
         login_to_system(driver, username, password)
         
         # 導航到會員管理
+        print(Fore.CYAN + f"{prefix} 導航到會員管理..." + Style.RESET_ALL)
         navigate_to_member_management(driver)
-        print("\n" + Fore.CYAN + "準備開始處理會員餘額..." + Style.RESET_ALL)
         time.sleep(3)
         
-        # 處理所有會員餘額(使用檔案中的金額)
-        process_member_balances(driver, target_amount=target_amount)        
-        print(f"\n{'='*50}")
-        print(Fore.GREEN + "所有操作完成!" + Style.RESET_ALL)
-        print(f"{'='*50}\n")
+        # 處理所有會員餘額
+        print(Fore.CYAN + f"{prefix} 開始處理會員餘額..." + Style.RESET_ALL)
+        process_member_balances(driver, target_amount=target_amount)
+        
+        print(Fore.GREEN + f"\n{prefix} ✓ 處理完成!" + Style.RESET_ALL)
         
     except Exception as e:
-        print(Fore.RED + f"發生錯誤: {e}" + Style.RESET_ALL)
+        print(Fore.RED + f"{prefix} 發生錯誤: {e}" + Style.RESET_ALL)
     finally:
         if driver:
             try:
-                # 自動關閉瀏覽器
-                print(Fore.YELLOW + "3秒後自動關閉瀏覽器..." + Style.RESET_ALL)
-                time.sleep(3)
-                print(Fore.YELLOW + "正在關閉瀏覽器..." + Style.RESET_ALL)
+                print(Fore.YELLOW + f"{prefix} 關閉瀏覽器..." + Style.RESET_ALL)
                 driver.quit()
-                print(Fore.GREEN + "瀏覽器已關閉" + Style.RESET_ALL)
+                print(Fore.GREEN + f"{prefix} 瀏覽器已關閉" + Style.RESET_ALL)
             except Exception as e:
-                print(Fore.RED + f"關閉瀏覽器時發生錯誤: {e}" + Style.RESET_ALL)
+                print(Fore.RED + f"{prefix} 關閉瀏覽器時發生錯誤: {e}" + Style.RESET_ALL)
+
+
+def main():
+    """主程式入口"""
+    init_environment()
+    
+    # 從檔案讀取所有帳號資料
+    print(Fore.CYAN + "正在讀取用戶資訊..." + Style.RESET_ALL)
+    accounts = load_user_info()
+    
+    if not accounts:
+        print(Fore.RED + "無法讀取用戶資訊，程式結束" + Style.RESET_ALL)
+        input("\n按 Enter 結束...")
+        return
+    
+    print(f"\n{'='*50}")
+    print(Fore.YELLOW + f"準備使用多線程處理 {len(accounts)} 個帳號" + Style.RESET_ALL)
+    print(f"{'='*50}\n")
+    
+    # 創建線程列表
+    threads = []
+    
+    # 為每個帳號創建一個線程
+    for idx, (username, password, target_amount) in enumerate(accounts, 1):
+        thread = Thread(
+            target=process_account,
+            args=(idx, username, password, target_amount),
+            name=f"Thread-{idx}"
+        )
+        threads.append(thread)
+        thread.start()
+        time.sleep(2)  # 避免同時啟動太多瀏覽器,間隔2秒
+    
+    # 等待所有線程完成
+    print(Fore.CYAN + f"\n等待所有帳號處理完成..." + Style.RESET_ALL)
+    for thread in threads:
+        thread.join()
+    
+    print(f"\n{'='*50}")
+    print(Fore.GREEN + "所有帳號處理完成!" + Style.RESET_ALL)
+    print(f"{'='*50}\n")
+    
+    print(Fore.YELLOW + "3秒後自動結束程式..." + Style.RESET_ALL)
+    time.sleep(3)
 
 
 if __name__ == "__main__":
