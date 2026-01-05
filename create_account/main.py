@@ -536,7 +536,7 @@ def main():
     while True:
         try:
             create_count = int(input("請選擇要創建帳號數量 (5 或 10)：").strip())
-            if create_count in (2, 10):
+            if create_count in (5, 10):
                 break
             else:
                 print("請只能輸入 5 或 10")
