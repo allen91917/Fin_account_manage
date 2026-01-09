@@ -9,6 +9,8 @@ from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
+from threading import Thread
+import threading
 import os
 import sys
 import time
@@ -480,6 +482,50 @@ def query_game_member_reports(driver, login_account):
         raise
 
 
+def process_account(account_num, account, password):
+    """
+    處理單一帳號的函數（用於多線程）
+    """
+    driver = None
+    thread_id = threading.current_thread().name
+    prefix = f"[帳號{account_num}-{account}]"
+    
+    try:
+        print(f"{prefix} 開始處理...")
+        
+        # 初始化瀏覽器
+        driver = create_driver()
+        
+        # 登入
+        driver.get("https://admin.fin88.app")
+        input_account_password(driver, account, password)
+        print(f"{prefix} 登入成功，等待頁面載入...")
+        time.sleep(5)
+        
+        # 關閉公告
+        close_announcement_popup(driver)
+        
+        # 導航到帳務報表
+        navigate_to_account_report(driver)
+        
+        # 查詢遊戲會員報表
+        report_data = query_game_member_reports(driver, account)
+        
+        # 匯出為 Excel
+        excel_path = export_to_excel(report_data, account)
+        
+        print(f"{prefix} ✅ 處理完成！")
+        
+    except Exception as e:
+        print(f"{prefix} ❌ 發生錯誤: {e}")
+    finally:
+        if driver:
+            try:
+                driver.quit()
+            except:
+                pass
+
+
 if __name__ == "__main__":
     users = read_all_user_info()
 
@@ -487,42 +533,35 @@ if __name__ == "__main__":
         print("❌ 沒有任何有效帳號")
         sys.exit(1)
 
-    # ✅ 從 txt 取得第一組帳號
-    account, password = users[0]
-    print(f"使用帳號登入：{account}")
-
-    driver = create_driver()
+    print(f"\n{'='*50}")
+    print(f"準備使用多線程處理 {len(users)} 個帳號")
+    print(f"{'='*50}\n")
     
-    try:
-        driver.get("https://admin.fin88.app")
-
-        # ✅ 用 txt 的帳密登入
-        input_account_password(driver, account, password)
-        print("✅ 登入成功，等待頁面載入...")
-        time.sleep(5)
-        
-        # ✅ 關閉公告彈窗
-        close_announcement_popup(driver)
-        
-        # ✅ 導航到帳務報表
-        navigate_to_account_report(driver)
-        
-        # ✅ 查詢遊戲會員報表（上週 + 本週）
-        report_data = query_game_member_reports(driver, account)
-        
-        # ✅ 匯出為 Excel
-        excel_path = export_to_excel(report_data, account)
-        
-        print("\n" + "="*50)
-        print("所有操作完成！")
-        print("="*50)
-        print("5 秒後自動關閉瀏覽器並結束程式...")
-        time.sleep(5)
-
-        driver.quit()
-        os._exit(0)
-            
-    except Exception as e:
-        print(f"\n❌ 發生錯誤: {e}")
+    # 創建線程列表
+    threads = []
+    
+    # 為每個帳號創建一個線程
+    for idx, (account, password) in enumerate(users, 1):
+        thread = Thread(
+            target=process_account,
+            args=(idx, account, password),
+            name=f"Thread-{idx}"
+        )
+        threads.append(thread)
+        thread.start()
+        time.sleep(2)  # 避免同時啟動太多瀏覽器，間隔2秒
+    
+    # 等待所有線程完成
+    print(f"\n等待所有帳號處理完成...")
+    for thread in threads:
+        thread.join()
+    
+    print(f"\n{'='*50}")
+    print("所有帳號處理完成！")
+    print(f"{'='*50}\n")
+    
+    print("5 秒後自動結束程式...")
+    time.sleep(5)
+    os._exit(0)
         
 
