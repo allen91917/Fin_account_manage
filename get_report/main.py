@@ -14,7 +14,7 @@ import threading
 import os
 import sys
 import time
-from datetime import datetime
+
 # ============FIN網址================
 URL = "https://admin.fin88.app"
 # ============TG網址================
@@ -310,7 +310,7 @@ def export_to_excel(all_accounts_data):
     try:
         # 獲取桌面路徑
         desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
         file_name = f"FIN報表.xlsx"
         file_path = os.path.join(desktop_path, file_name)
         file_path = os.path.join(desktop_path, file_name)
