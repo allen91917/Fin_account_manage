@@ -14,6 +14,7 @@ import threading
 import os
 import sys
 import time
+from datetime import datetime
 # ============FIN網址================
 URL = "https://admin.fin88.app"
 # ============TG網址================
@@ -188,60 +189,92 @@ def navigate_to_account_report(driver):
         # print("成功進入帳務報表頁面！")
         
     except Exception as e:
-        print(f"❌ 導航到帳務報表失敗: {e}")
+        print(f"導航到帳務報表失敗: {e}")
         raise
 
 def extract_member_data(driver, login_account):
     """
     抓取遊戲會員報表資料
-    回傳：包含所有會員資料的列表（排除登入帳號）
+    回傳:包含所有會員資料的列表(排除登入帳號)
     """
     try:
         print("正在抓取報表資料...")
         time.sleep(3)  # 等待資料載入完成
         
-        # 找到所有會員行
-        member_rows = driver.find_elements(By.XPATH, "//div[contains(@class, 'my-table-row-box')]//div[contains(@class, 'my-table-row')]")
+        # 找到所有會員行 - 使用更精確的 XPath,只抓取 my-table-row-box 下的直接子元素
+        member_rows = driver.find_elements(By.XPATH, "//div[contains(@class, 'my-table-row-box')]/div[contains(@class, 'my-table-row')]")
+        print(f"找到 {len(member_rows)} 筆會員資料行")
         
+        # 去重:使用 set 來追蹤已經處理過的帳號
+        processed_accounts = set()
         data_list = []
         
         for index, row in enumerate(member_rows):
             try:
-                # 抓取會員姓名和帳號
-                name_account_element = row.find_element(By.XPATH, ".//div[contains(@class, 'my-table-cell')][1]//div")
-                name_account_text = name_account_element.text.strip()
-                
-                # 如果是第一筆且包含登入帳號，則忽略
-                if index == 0 and login_account in name_account_text:
-                    # print(f"⚠️ 忽略第一筆（登入帳號）：{name_account_text}")
+                # 先檢查是否包含會員按鈕,沒有則跳過(可能是總計行或其他非會員行)
+                buttons = row.find_elements(By.XPATH, ".//button[contains(@class, 'ant-btn-link')]")
+                if not buttons:
+                    # print(f"⚠️ 跳過非會員資料行 (第 {index+1} 行)")
                     continue
                 
+                # 抓取會員姓名和帳號 (button 內有兩個 span)
+                name_element = row.find_element(By.XPATH, ".//button[contains(@class, 'ant-btn-link')]//span[1]")
+                account_element = row.find_element(By.XPATH, ".//button[contains(@class, 'ant-btn-link')]//span[2]")
+                
+                name = name_element.text.strip()
+                account = account_element.text.strip()
+                
+                # 檢查是否已經處理過此帳號
+                if account in processed_accounts:
+                    # print(f"⚠️ 跳過重複帳號:{name}/{account}")
+                    continue
+                
+                # 如果是登入帳號,則忽略
+                if login_account in account:
+                    # print(f"⚠️ 忽略登入帳號:{name}/{account}")
+                    continue
+                
+                # 標記此帳號已處理
+                processed_accounts.add(account)
+                
+                name_account_text = f"{name}\n{account}"
+                
+                # 抓取代理層級
+                agent_level = row.find_element(By.XPATH, ".//div[contains(@class, 'my-table-cell')][.//div[text()='代理層級']]/div[2]").text.strip()
+                
                 # 抓取注單筆數
-                order_count = row.find_element(By.XPATH, ".//div[.//div[text()='注單筆數']]/div[2]").text.strip()
+                order_count = row.find_element(By.XPATH, ".//div[contains(@class, 'my-table-cell')][.//div[text()='注單筆數']]/div[2]").text.strip()
                 
                 # 抓取下注金額
-                bet_amount = row.find_element(By.XPATH, ".//div[.//div[text()='下注金額']]/div[2]").text.strip()
+                bet_amount = row.find_element(By.XPATH, ".//div[contains(@class, 'my-table-cell')][.//div[text()='下注金額']]/div[2]").text.strip()
                 
                 # 抓取有效投注
-                valid_bet = row.find_element(By.XPATH, ".//div[.//div[text()='有效投注']]/div[2]").text.strip()
+                valid_bet = row.find_element(By.XPATH, ".//div[contains(@class, 'my-table-cell')][.//div[text()='有效投注']]/div[2]").text.strip()
                 
-                # 抓取會員輸贏
-                member_result = row.find_element(By.XPATH, ".//div[.//div[text()='會員輸贏']]/div[2]").text.strip()
+                # 抓取會員輸贏 (可能包含 span 標籤)
+                member_result_div = row.find_element(By.XPATH, ".//div[contains(@class, 'my-table-cell')][.//div[text()='會員輸贏']]/div[2]")
+                member_result = member_result_div.text.strip()
                 
                 # 抓取會員退水
-                member_rebate = row.find_element(By.XPATH, ".//div[.//div[text()='會員退水']]/div[2]").text.strip()
+                member_rebate = row.find_element(By.XPATH, ".//div[contains(@class, 'my-table-cell')][.//div[text()='會員退水']]/div[2]").text.strip()
                 
                 # 抓取個人佔成
-                personal_share = row.find_element(By.XPATH, ".//div[.//div[text()='個人佔成']]/div[2]").text.strip()
+                personal_share = row.find_element(By.XPATH, ".//div[contains(@class, 'my-table-cell')][.//div[text()='個人佔成']]/div[2]").text.strip()
                 
-                # 抓取個人退水
-                personal_rebate = row.find_element(By.XPATH, ".//div[.//div[text()='個人退水']]/div[2]").text.strip()
+                # 抓取個人退水 (可能包含 span 標籤)
+                personal_rebate_div = row.find_element(By.XPATH, ".//div[contains(@class, 'my-table-cell')][.//div[text()='個人退水']]/div[2]")
+                personal_rebate = personal_rebate_div.text.strip()
                 
                 # 抓取應收下線
-                receivable = row.find_element(By.XPATH, ".//div[.//div[text()='應收下線']]/div[2]").text.strip()
+                receivable = row.find_element(By.XPATH, ".//div[contains(@class, 'my-table-cell')][.//div[text()='應收下線']]/div[2]").text.strip()
+                
+                # 抓取個人盈虧 (可能包含 span 標籤)
+                personal_profit_div = row.find_element(By.XPATH, ".//div[contains(@class, 'my-table-cell')][.//div[text()='個人盈虧']]/div[2]")
+                personal_profit = personal_profit_div.text.strip()
                 
                 member_data = {
                     "姓名帳號": name_account_text,
+                    "代理層級": agent_level,
                     "注單筆數": order_count,
                     "下注金額": bet_amount,
                     "有效投注": valid_bet,
@@ -249,16 +282,19 @@ def extract_member_data(driver, login_account):
                     "會員退水": member_rebate,
                     "個人佔成": personal_share,
                     "個人退水": personal_rebate,
-                    "應收下線": receivable
+                    "應收下線": receivable,
+                    "個人盈虧": personal_profit
                 }
-                
                 data_list.append(member_data)
-                # print(f"✅ 已抓取：{name_account_text} - 應收下線: {receivable}")
+                # print(f"已抓取：{name}/{account} - 應收下線: {receivable}")
                 
             except Exception as e:
                 print(f"抓取某筆資料時發生錯誤: {e}")
+                import traceback
+                traceback.print_exc()
                 continue
         
+        print(f"成功抓取 {len(data_list)} 筆有效資料")
         return data_list
         
     except Exception as e:
@@ -267,15 +303,16 @@ def extract_member_data(driver, login_account):
         traceback.print_exc()
         return []
 
-
-def export_to_excel(report_data, login_account):
+def export_to_excel(all_accounts_data):
     """
-    將報表資料匯出為 Excel 檔案到桌面（上週和本週放在同一個工作表）
+    將所有帳號的報表資料匯出為一個 Excel 檔案到桌面（上週和本週放在同一個工作表）
     """
     try:
         # 獲取桌面路徑
         desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-        file_name = f"{login_account}.xlsx"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        file_name = f"FIN報表.xlsx"
+        file_path = os.path.join(desktop_path, file_name)
         file_path = os.path.join(desktop_path, file_name)
         
         print(f"\n正在匯出 Excel 檔案到: {file_path}")
@@ -290,8 +327,8 @@ def export_to_excel(report_data, login_account):
         header_font = Font(color="FFFFFF", bold=True)
         header_alignment = Alignment(horizontal="center", vertical="center")
         
-        # 寫入標題（加上週期欄位）
-        headers = ["週期", "姓名帳號", "注單筆數", "下注金額", "有效投注", "會員輸贏", "會員退水", "個人佔成", "個人退水", "應收下線"]
+        # 寫入標題(加上週期欄位和帳號欄位)
+        headers = ["週期", "登入帳號", "姓名帳號", "代理層級", "注單筆數", "下注金額", "有效投注", "會員輸贏", "會員退水", "個人佔成", "個人退水", "應收下線", "個人盈虧"]
         ws.append(headers)
         
         # 設定標題樣式
@@ -300,82 +337,98 @@ def export_to_excel(report_data, login_account):
             cell.font = header_font
             cell.alignment = header_alignment
         
-        # 寫入上週資料
-        if report_data.get("上週"):
-            last_week_total = 0
-            for data in report_data["上週"]:
-                ws.append([
-                    "上週",
-                    data["姓名帳號"],
-                    data["注單筆數"],
-                    data["下注金額"],
-                    data["有效投注"],
-                    data["會員輸贏"],
-                    data["會員退水"],
-                    data["個人佔成"],
-                    data["個人退水"],
-                    data["應收下線"]
-                ])
-                # 累加應收下線（處理逗號和正負號）
-                try:
-                    receivable_value = float(data["應收下線"].replace(",", ""))
-                    last_week_total += receivable_value
-                except:
-                    pass
-            
-            # 加入上週總計行
-            ws.append([
-                "上週",
-                "總應收下線",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                f"{last_week_total:,.2f}"
-            ])
+        # 寫入上週資料（所有帳號）
+        last_week_total = 0
+        for account_data in all_accounts_data:
+            login_account = account_data["login_account"]
+            if account_data["report_data"].get("上週"):
+                for data in account_data["report_data"]["上週"]:
+                    ws.append([
+                        "上週",
+                        login_account,
+                        data["姓名帳號"],
+                        data["代理層級"],
+                        data["注單筆數"],
+                        data["下注金額"],
+                        data["有效投注"],
+                        data["會員輸贏"],
+                        data["會員退水"],
+                        data["個人佔成"],
+                        data["個人退水"],
+                        data["應收下線"],
+                        data["個人盈虧"]
+                    ])
+                    # 累加應收下線（處理逗號和正負號）
+                    try:
+                        receivable_value = float(data["應收下線"].replace(",", ""))
+                        last_week_total += receivable_value
+                    except:
+                        pass
+        
+        # 加入上週總計行
+        ws.append([
+            "上週",
+            "總應收下線",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            f"{last_week_total:,.2f}",
+            ""
+        ])
         
         # 空一行
-        ws.append(["", "", "", "", "", "", "", "", "", ""])
+        ws.append(["", "", "", "", "", "", "", "", "", "", "", "", ""])
         
-        # 寫入本週資料
-        if report_data.get("本週"):
-            this_week_total = 0
-            for data in report_data["本週"]:
-                ws.append([
-                    "本週",
-                    data["姓名帳號"],
-                    data["注單筆數"],
-                    data["下注金額"],
-                    data["有效投注"],
-                    data["會員輸贏"],
-                    data["會員退水"],
-                    data["個人佔成"],
-                    data["個人退水"],
-                    data["應收下線"]
-                ])
-                # 累加應收下線（處理逗號和正負號）
-                try:
-                    receivable_value = float(data["應收下線"].replace(",", ""))
-                    this_week_total += receivable_value
-                except:
-                    pass
-            
-            # 加入本週總計行
-            ws.append([
-                "本週",
-                "總應收下線",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                f"{this_week_total:,.2f}"
-            ])
+        # 寫入本週資料（所有帳號）
+        this_week_total = 0
+        for account_data in all_accounts_data:
+            login_account = account_data["login_account"]
+            if account_data["report_data"].get("本週"):
+                for data in account_data["report_data"]["本週"]:
+                    ws.append([
+                        "本週",
+                        login_account,
+                        data["姓名帳號"],
+                        data["代理層級"],
+                        data["注單筆數"],
+                        data["下注金額"],
+                        data["有效投注"],
+                        data["會員輸贏"],
+                        data["會員退水"],
+                        data["個人佔成"],
+                        data["個人退水"],
+                        data["應收下線"],
+                        data["個人盈虧"]
+                    ])
+                    # 累加應收下線（處理逗號和正負號）
+                    try:
+                        receivable_value = float(data["應收下線"].replace(",", ""))
+                        this_week_total += receivable_value
+                    except:
+                        pass
+        
+        # 加入本週總計行
+        ws.append([
+            "本週",
+            "總應收下線",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            f"{this_week_total:,.2f}",
+            ""
+        ])
         
         # 調整列寬
         for column in ws.columns:
@@ -395,7 +448,7 @@ def export_to_excel(report_data, login_account):
         return file_path
         
     except Exception as e:
-        print(f"❌ 匯出 Excel 失敗: {e}")
+        print(f"匯出 Excel 失敗: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -406,21 +459,21 @@ def query_game_member_reports(driver, login_account):
     查詢遊戲會員報表：點擊遊戲會員報表 → 上週查詢 → 本週查詢
     """
     # 定義絕對 XPath
-    last_week_button_xpath = "/html/body/div[1]/section/section/section/div[3]/div/div/div/div/form/div/div[2]/div/div/div[2]/div/div/div/div/div/button[4]"
-    this_week_button_xpath = "/html/body/div[1]/section/section/section/div[3]/div/div/div/div/form/div/div[2]/div/div/div[2]/div/div/div/div/div/button[3]"
-    search_xpath = "/html/body/div[1]/section/section/section/div[3]/div/div/div/div/form/div/div[5]/div/div/div/div/div/div/button[2]"
+    last_week_button_xpath = "/html/body/div[1]/section/section/section/div[3]/div/div/div/div/div[3]/form/div/div[2]/div/div/div[2]/div/div/div/div/div/button[4]"
+    this_week_button_xpath = "/html/body/div[1]/section/section/section/div[3]/div/div/div/div/div[3]/form/div/div[2]/div/div/div[2]/div/div/div/div/div/button[3]"
+    search_xpath = "/html/body/div[1]/section/section/section/div[3]/div/div/div/div/div[3]/form/div/div[5]/div/div/div/div/div/div/button[2]"
     
     try:
         wait = WebDriverWait(driver, 30)
         
         # ===== 點擊「遊戲會員報表」 =====
-        print("\n正在點擊「遊戲會員報表」...")
-        game_member_report = wait.until(
-            EC.element_to_be_clickable((By.XPATH, "//label[contains(@class, 'ant-radio-button-wrapper')]//span[text()='遊戲會員報表']"))
-        )
-        game_member_report.click()
-        # print("✅ 已點擊「遊戲會員報表」")
-        time.sleep(3)
+        # print("\n正在點擊「遊戲代理報表」...")
+        # game_member_report = wait.until(
+        #     EC.element_to_be_clickable((By.XPATH, "//label[contains(@class, 'ant-radio-button-wrapper')]//span[text()='遊戲代理報表']"))
+        # )
+        # game_member_report.click()
+        # # print("✅ 已點擊「遊戲代理報表」")
+        # time.sleep(3)
         
         # ===== 查詢上週 =====
         # print("\n正在點擊「上週」按鈕...")
@@ -444,11 +497,12 @@ def query_game_member_reports(driver, login_account):
         time.sleep(5)
         
         # 抓取上週資料
-        # print("\n開始抓取上週資料...")
+        print("\n開始抓取上週資料...")
         last_week_data = extract_member_data(driver, login_account)
+        print(f"上週資料筆數: {len(last_week_data)}")
         
         # ===== 查詢本週 =====
-        # print("\n正在點擊「本週」按鈕...")
+        print("\n正在點擊「本週」按鈕...")
         this_week_button = wait.until(
             EC.element_to_be_clickable((By.XPATH, this_week_button_xpath))
         )
@@ -471,6 +525,7 @@ def query_game_member_reports(driver, login_account):
         # 抓取本週資料
         # print("\n開始抓取本週資料...")
         this_week_data = extract_member_data(driver, login_account)
+        # print(f"本週資料筆數: {len(this_week_data)}")
         
         # print("\n✅ 遊戲會員報表查詢完成！")
         
@@ -486,7 +541,7 @@ def query_game_member_reports(driver, login_account):
         raise
 
 
-def process_account(account_num, account, password):
+def process_account(account_num, account, password, shared_data, lock):
     """
     處理單一帳號的函數（用於多線程）
     """
@@ -515,13 +570,17 @@ def process_account(account_num, account, password):
         # 查詢遊戲會員報表
         report_data = query_game_member_reports(driver, account)
         
-        # 匯出為 Excel
-        excel_path = export_to_excel(report_data, account)
+        # 將資料加入共享列表（使用 lock 確保線程安全）
+        with lock:
+            shared_data.append({
+                "login_account": account,
+                "report_data": report_data
+            })
         
-        print(f"{prefix} ✅ 處理完成！")
+        print(f"{prefix} 處理完成！")
         
     except Exception as e:
-        print(f"{prefix} ❌ 發生錯誤: {e}")
+        print(f"{prefix} 發生錯誤: {e}")
     finally:
         if driver:
             try:
@@ -534,12 +593,16 @@ if __name__ == "__main__":
     users = read_all_user_info()
 
     if not users:
-        print("❌ 沒有任何有效帳號")
+        print("沒有任何有效帳號")
         sys.exit(1)
 
     print(f"\n{'='*50}")
     print(f"準備使用多線程處理 {len(users)} 個帳號")
     print(f"{'='*50}\n")
+    
+    # 創建共享資料列表和線程鎖
+    shared_data = []
+    lock = threading.Lock()
     
     # 創建線程列表
     threads = []
@@ -548,7 +611,7 @@ if __name__ == "__main__":
     for idx, (account, password) in enumerate(users, 1):
         thread = Thread(
             target=process_account,
-            args=(idx, account, password),
+            args=(idx, account, password, shared_data, lock),
             name=f"Thread-{idx}"
         )
         threads.append(thread)
@@ -559,12 +622,21 @@ if __name__ == "__main__":
     print(f"\n等待所有帳號處理完成...")
     for thread in threads:
         thread.join()
+    # 匯出所有資料到一個 Excel 檔案
+    if shared_data:
+        print(f"\n收集到 {len(shared_data)} 個帳號的資料")
+        for idx, acc_data in enumerate(shared_data, 1):
+            上週筆數 = len(acc_data["report_data"].get("上週", []))
+            本週筆數 = len(acc_data["report_data"].get("本週", []))
+            print(f"  帳號 {idx} ({acc_data['login_account']}): 上週 {上週筆數} 筆, 本週 {本週筆數} 筆")
+        
+        excel_path = export_to_excel(shared_data)
+        if excel_path:
+            print(f"\n所有資料已成功匯出到: {excel_path}")
+    else:
+        print("❌ 沒有任何資料可以匯出")
     
-    print(f"\n{'='*50}")
-    print("所有帳號處理完成！")
-    print(f"{'='*50}\n")
-    
-    print("5 秒後自動結束程式...")
+    print("\n5 秒後自動結束程式...")
     time.sleep(5)
     os._exit(0)
         
