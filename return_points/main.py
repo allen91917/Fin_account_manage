@@ -15,9 +15,9 @@ from threading import Thread
 import threading
 
 # ============FIN網址================
-# URL = "https://admin.fin88.app"
+URL = "https://admin.fin88.app"
 # ============TG網址================
-URL = "https://admin.tg5688.com"
+# URL = "https://admin.tg5688.com"
 
 def load_user_info():
     """從用戶資訊.txt讀取所有帳號、密碼和金額"""
