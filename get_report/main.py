@@ -14,6 +14,10 @@ import threading
 import os
 import sys
 import time
+# ============FIN網址================
+URL = "https://admin.fin88.app"
+# ============TG網址================
+# URL = "https://admin.tg5688.com"
 
 # ============================
 # 建立 Chrome Driver（使用 ChromeDriverManager）
@@ -497,7 +501,7 @@ def process_account(account_num, account, password):
         driver = create_driver()
         
         # 登入
-        driver.get("https://admin.fin88.app")
+        driver.get(URL)
         input_account_password(driver, account, password)
         print(f"{prefix} 登入成功，等待頁面載入...")
         time.sleep(5)
