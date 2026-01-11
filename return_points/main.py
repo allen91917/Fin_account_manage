@@ -410,28 +410,55 @@ def main():
         input("\n按 Enter 結束...")
         return
     
+    # 設定每批次處理的帳號數量
+    BATCH_SIZE = 5
+    total_accounts = len(accounts)
+    total_batches = (total_accounts + BATCH_SIZE - 1) // BATCH_SIZE  # 向上取整
+    
     print(f"\n{'='*50}")
-    print(Fore.YELLOW + f"準備使用多線程處理 {len(accounts)} 個帳號" + Style.RESET_ALL)
+    print(Fore.CYAN + f"共有 {total_accounts} 個帳號待處理" + Style.RESET_ALL)
+    print(Fore.CYAN + f"將分 {total_batches} 批次執行，每批次最多 {BATCH_SIZE} 個帳號" + Style.RESET_ALL)
     print(f"{'='*50}\n")
     
-    # 創建線程列表
-    threads = []
-    
-    # 為每個帳號創建一個線程
-    for idx, (username, password, target_amount) in enumerate(accounts, 1):
-        thread = Thread(
-            target=process_account,
-            args=(idx, username, password, target_amount),
-            name=f"Thread-{idx}"
-        )
-        threads.append(thread)
-        thread.start()
-        time.sleep(2)  # 避免同時啟動太多瀏覽器,間隔2秒
-    
-    # 等待所有線程完成
-    print(Fore.CYAN + f"\n等待所有帳號處理完成..." + Style.RESET_ALL)
-    for thread in threads:
-        thread.join()
+    # 分批處理帳號
+    for batch_num in range(total_batches):
+        start_idx = batch_num * BATCH_SIZE
+        end_idx = min(start_idx + BATCH_SIZE, total_accounts)
+        batch_accounts = accounts[start_idx:end_idx]
+        
+        print(f"\n{'='*50}")
+        print(Fore.YELLOW + f"開始執行第 {batch_num + 1}/{total_batches} 批次" + Style.RESET_ALL)
+        print(Fore.YELLOW + f"本批次處理 {len(batch_accounts)} 個帳號" + Style.RESET_ALL)
+        print(f"{'='*50}\n")
+        
+        # 建立本批次的執行緒列表
+        threads = []
+        
+        # 為本批次的每個帳號建立執行緒
+        for idx, (username, password, target_amount) in enumerate(batch_accounts, start=start_idx + 1):
+            thread = Thread(
+                target=process_account,
+                args=(idx, username, password, target_amount),
+                name=f"Thread-{idx}"
+            )
+            threads.append(thread)
+            thread.start()
+            
+            # 稍微錯開啟動時間，避免同時初始化太多瀏覽器
+            time.sleep(2)
+        
+        # 等待本批次所有執行緒完成
+        for thread in threads:
+            thread.join()
+        
+        print(f"\n{'='*50}")
+        print(Fore.GREEN + f"第 {batch_num + 1}/{total_batches} 批次完成！" + Style.RESET_ALL)
+        print(f"{'='*50}\n")
+        
+        # 如果不是最後一批，稍作休息
+        if batch_num < total_batches - 1:
+            print(Fore.CYAN + "等待 5 秒後執行下一批次...\n" + Style.RESET_ALL)
+            time.sleep(5)
     
     print(f"\n{'='*50}")
     print(Fore.GREEN + "所有帳號處理完成!" + Style.RESET_ALL)
