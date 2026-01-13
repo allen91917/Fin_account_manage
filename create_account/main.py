@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import random
 from selenium import webdriver
@@ -10,11 +11,65 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
+from threading import Thread
+import threading
+from colorama import init, Fore, Style
 
 # ============FIN網址================
 URL = "https://admin.fin88.app"
 # ============TG網址================
 # URL = "https://admin.tg5688.com"
+
+# 初始化 colorama
+init(autoreset=True)
+
+
+# ============================
+# 讀取用戶資訊
+# ============================
+def load_user_info():
+    """從用戶資訊.txt讀取所有帳號、密碼和創建數量"""
+    accounts = []
+    try:
+        # 判斷是否為打包後的 exe
+        if getattr(sys, 'frozen', False):
+            # 打包後的 exe，使用 exe 所在目錄
+            script_dir = os.path.dirname(sys.executable)
+        else:
+            # Python 腳本運行，使用腳本所在目錄
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        file_path = os.path.join(script_dir, '用戶資訊.txt')
+        
+        with open(file_path, 'r', encoding='utf-8') as file:
+            for line_num, line in enumerate(file, 1):
+                line = line.strip()
+                # 跳過空行和註解行
+                if not line or line.startswith('#'):
+                    continue
+                
+                # 解析格式：帳號,密碼,創建數量
+                parts = line.split(',')
+                if len(parts) == 3:
+                    account = parts[0].strip()
+                    password = parts[1].strip()
+                    create_count = int(parts[2].strip())
+                    accounts.append((account, password, create_count))
+                    print(Fore.GREEN + f"讀取帳號 #{len(accounts)} - 帳號: {account}, 創建數量: {create_count}" + Style.RESET_ALL)
+        
+        if not accounts:
+            print(Fore.RED + "未找到有效的用戶資訊" + Style.RESET_ALL)
+        else:
+            print(Fore.GREEN + f"\n總共讀取 {len(accounts)} 個帳號" + Style.RESET_ALL)
+        
+        return accounts
+        
+    except FileNotFoundError:
+        print(Fore.RED + "找不到 用戶資訊.txt 檔案" + Style.RESET_ALL)
+        return []
+    except Exception as e:
+        print(Fore.RED + f"讀取用戶資訊時發生錯誤: {e}" + Style.RESET_ALL)
+        return []
 
 
 # ============================
@@ -31,15 +86,19 @@ def create_driver():
     # ============================
     chrome_options = Options()
     chrome_options.add_argument("--disable-infobars")
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
     chrome_options.add_experimental_option("useAutomationExtension", False)
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     chrome_options.add_argument("--disable-save-password-bubble")
-
-    # 關閉 Chrome 密碼儲存提示
+    chrome_options.add_argument("--disable-password-manager-reauthentication")
+    chrome_options.add_argument("--no-service-autorun")
+    
+    # 關閉 Chrome 密碼儲存提示和密碼外洩警告
     prefs = {
         "credentials_enable_service": False,
-        "profile.password_manager_enabled": False
+        "profile.password_manager_enabled": False,
+        "profile.default_content_setting_values.notifications": 2,  # 關閉通知
+        "profile.password_manager_leak_detection": False  # 關閉密碼外洩檢測
     }
     chrome_options.add_experimental_option("prefs", prefs)
 
@@ -134,12 +193,8 @@ def append_random_account(created_account, txt_path):
 #  登入代理帳號
 # ============================
 
-def login(driver):
-    """讓使用者輸入帳號密碼後，自動登入，並導向個人頁面"""
-
-    # === 1️⃣ 使用者輸入帳密 ===
-    account = input("請輸入帳號：").strip()
-    password = input("請輸入密碼：").strip()
+def login(driver, account, password):
+    """使用提供的帳號密碼自動登入"""
 
     print(f"已儲存帳號密碼，準備登入...")
 
@@ -484,11 +539,11 @@ def Table_limit(driver):
         # print("已點擊限紅下拉選單")
         time.sleep(1)
 
-        # === 2️⃣ 選擇第一個選項 (100-1000) ===
-        first_option_xpath = "//div[contains(@class, 'ant-select-item-option')][@title='100-1000']"
+        # === 2️⃣ 選擇第一個選項 (20-1W) ===
+        first_option_xpath = "//div[contains(@class, 'ant-select-item-option')][@title='20-1W']"
         first_option = wait.until(EC.element_to_be_clickable((By.XPATH, first_option_xpath)))
         first_option.click()
-        # print("已選擇限紅選項：100-1000")
+        # print("已選擇限紅選項：20-1W")
         time.sleep(1)
 
         # === 3️⃣ 輸入封頂數值 ===
@@ -525,66 +580,137 @@ def Table_limit(driver):
 
 
 # =======================================
-#  主程式 讓使用者選擇要創建 5 隻或 10 隻
+#  處理單一帳號的函數（用於多線程）
+# =======================================
+
+def process_single_account(account_num, agent_account, agent_password, create_count):
+    """處理單一帳號的創建流程"""
+    driver = None
+    thread_id = threading.current_thread().name
+    prefix = f"[帳號{account_num}-{agent_account}]"
+    
+    try:
+        print(Fore.CYAN + f"\n{prefix} 開始處理..." + Style.RESET_ALL)
+        
+        # 初始化瀏覽器
+        driver = create_driver()
+        driver.get(URL)
+        time.sleep(2)
+        
+        # 登入系統
+        print(Fore.CYAN + f"{prefix} 正在登入..." + Style.RESET_ALL)
+        login(driver, agent_account, agent_password)
+        
+        # TXT 建在桌面
+        DESKTOP = os.path.join(os.path.expanduser("~"), "Desktop")
+        txt_path = os.path.join(DESKTOP, f"{agent_account}.txt")
+        
+        init_agent_txt(agent_account, agent_password, txt_path)
+        
+        print(Fore.CYAN + f"{prefix} 將創建 {create_count} 隻帳號" + Style.RESET_ALL)
+        
+        # 創建指定數量的帳號
+        for i in range(1, create_count + 1):
+            print(Fore.YELLOW + f"\n{prefix} 開始創建第 {i}/{create_count} 隻帳號" + Style.RESET_ALL)
+            
+            agent_control(driver)
+            created_account = create_account(driver)
+            print(Fore.GREEN + f"{prefix} 本次創建的帳號：{created_account}" + Style.RESET_ALL)
+            
+            set_credit_limit(driver)
+            manufacturers(driver)
+            hold_position(driver)
+            Table_limit(driver)
+            
+            append_random_account(created_account, txt_path)
+            print(Fore.GREEN + f"{prefix} 已寫入：{created_account} -> {txt_path}" + Style.RESET_ALL)
+        
+        print(Fore.GREEN + f"\n{prefix} ✓ 全部 {create_count} 隻帳號創建完成!" + Style.RESET_ALL)
+        
+    except Exception as e:
+        print(Fore.RED + f"{prefix} 發生錯誤: {e}" + Style.RESET_ALL)
+    finally:
+        if driver:
+            try:
+                print(Fore.YELLOW + f"{prefix} 關閉瀏覽器..." + Style.RESET_ALL)
+                driver.quit()
+                print(Fore.GREEN + f"{prefix} 瀏覽器已關閉" + Style.RESET_ALL)
+            except Exception as e:
+                print(Fore.RED + f"{prefix} 關閉瀏覽器時發生錯誤: {e}" + Style.RESET_ALL)
+
+
+# =======================================
+#  主程式
 # =======================================
 
 def main():
-    driver = create_driver()
-
+    """主程式入口"""
     
-    # print(f"前往網站：{URL}")
-    driver.get(URL)
-
-    # print("已成功導向網站")
-
-    # ⭐ 使用者選擇要創建 5 隻或 10 隻
-    while True:
-        try:
-            create_count = int(input("請選擇要創建帳號數量 (5 或 10)：").strip())
-            if create_count in (5, 10):
-                break
-            else:
-                print("請只能輸入 5 或 10")
-        except:
-            print("請輸入數字 5 或 10")
-
-    print(f"將創建 {create_count} 隻帳號\n")
-
-    # ⭐ 先登入一次代理
-    agent_account, agent_password = login(driver)
-
-    # ⭐ TXT 建在桌面
-    DESKTOP = os.path.join(os.path.expanduser("~"), "Desktop")
-    txt_path = os.path.join(DESKTOP, f"{agent_account}.txt")
-
-    init_agent_txt(agent_account, agent_password, txt_path)
-
-    # ⭐ 跑 N 次
-    for i in range(1, create_count + 1):
-        print("\n=============================")
-        print(f"開始創建第 {i} 隻帳號")
-        print("=============================\n")
-
-        agent_control(driver)
-
-        created_account = create_account(driver)
-        print("本次創建的帳號：", created_account)
-
-        set_credit_limit(driver)
-        manufacturers(driver)
-        hold_position(driver)
-        Table_limit(driver)
-
-        append_random_account(created_account, txt_path)
-        print(f"已寫入：{created_account} -> {txt_path}")
-
-    # ⭐ 全部創完 → 等 5 秒 → 關閉 → 結束程式
-    print(f"\n全部 {create_count} 隻帳號創建完畢")
-    print("5 秒後自動關閉瀏覽器並結束程式...")
-    time.sleep(5)
-
-    driver.quit()
-    os._exit(0)
+    # 從檔案讀取所有帳號資料
+    print(Fore.CYAN + "正在讀取用戶資訊..." + Style.RESET_ALL)
+    accounts = load_user_info()
+    
+    if not accounts:
+        print(Fore.RED + "無法讀取用戶資訊，程式結束" + Style.RESET_ALL)
+        input("\n按 Enter 結束...")
+        return
+    
+    # 設定每批次處理的帳號數量
+    BATCH_SIZE = 5
+    total_accounts = len(accounts)
+    total_batches = (total_accounts + BATCH_SIZE - 1) // BATCH_SIZE  # 向上取整
+    
+    print(f"\n{'='*50}")
+    print(Fore.CYAN + f"共有 {total_accounts} 個帳號待處理" + Style.RESET_ALL)
+    print(Fore.CYAN + f"將分 {total_batches} 批次執行，每批次最多 {BATCH_SIZE} 個帳號" + Style.RESET_ALL)
+    print(f"{'='*50}\n")
+    
+    # 分批處理帳號
+    for batch_num in range(total_batches):
+        start_idx = batch_num * BATCH_SIZE
+        end_idx = min(start_idx + BATCH_SIZE, total_accounts)
+        batch_accounts = accounts[start_idx:end_idx]
+        
+        print(f"\n{'='*50}")
+        print(Fore.YELLOW + f"開始執行第 {batch_num + 1}/{total_batches} 批次" + Style.RESET_ALL)
+        print(Fore.YELLOW + f"本批次處理 {len(batch_accounts)} 個帳號" + Style.RESET_ALL)
+        print(f"{'='*50}\n")
+        
+        # 建立本批次的執行緒列表
+        threads = []
+        
+        # 為本批次的每個帳號建立執行緒
+        for idx, (agent_account, agent_password, create_count) in enumerate(batch_accounts, start=start_idx + 1):
+            thread = Thread(
+                target=process_single_account,
+                args=(idx, agent_account, agent_password, create_count),
+                name=f"Thread-{idx}"
+            )
+            threads.append(thread)
+            thread.start()
+            
+            # 稍微錯開啟動時間，避免同時初始化太多瀏覽器
+            time.sleep(2)
+        
+        # 等待本批次所有執行緒完成
+        for thread in threads:
+            thread.join()
+        
+        print(f"\n{'='*50}")
+        print(Fore.GREEN + f"第 {batch_num + 1}/{total_batches} 批次完成！" + Style.RESET_ALL)
+        print(f"{'='*50}\n")
+        
+        # 如果不是最後一批，稍作休息
+        if batch_num < total_batches - 1:
+            print(Fore.CYAN + "等待 5 秒後執行下一批次...\n" + Style.RESET_ALL)
+            time.sleep(5)
+    
+    print(f"\n{'='*50}")
+    print(Fore.GREEN + "所有帳號處理完成!" + Style.RESET_ALL)
+    print(f"{'='*50}\n")
+    
+    print(Fore.YELLOW + "3秒後自動結束程式..." + Style.RESET_ALL)
+    time.sleep(3)
 
 
 
