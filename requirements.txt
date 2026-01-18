@@ -1,0 +1,12 @@
+# Selenium 相關
+selenium==4.16.0
+webdriver-manager==4.0.1
+
+# Excel 處理
+openpyxl==3.1.2
+
+# 終端機顏色輸出
+colorama==0.4.6
+
+# 打包工具 (用於 build.py)
+pyinstaller==6.3.0
