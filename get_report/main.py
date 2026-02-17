@@ -191,7 +191,7 @@ def close_announcement_popup(driver):
                 
                 if js_result > 0:
                     closed_count += js_result
-                    print(f"已用 JS 關閉 {js_result} 個公告彈窗")
+                    # print(f"已用 JS 關閉 {js_result} 個公告彈窗")
                     time.sleep(1)  # 短暫等待
                     continue
             except Exception as js_error:
@@ -204,7 +204,7 @@ def close_announcement_popup(driver):
                 )
                 close_button.click()
                 closed_count += 1
-                print(f"已點擊關閉第 {closed_count} 個公告彈窗(新版)")
+                # print(f"已點擊關閉第 {closed_count} 個公告彈窗(新版)")
                 time.sleep(1.5)  # 等待下一個彈窗出現
                 continue
             except:
@@ -215,7 +215,7 @@ def close_announcement_popup(driver):
                     )
                     close_button.click()
                     closed_count += 1
-                    print(f"已點擊關閉第 {closed_count} 個公告彈窗(舊版)")
+                    # print(f"已點擊關閉第 {closed_count} 個公告彈窗(舊版)")
                     time.sleep(1.5)  # 等待下一個彈窗出現
                     continue
                 except:
@@ -225,10 +225,10 @@ def close_announcement_popup(driver):
             # 沒有更多彈窗了
             break
     
-    if closed_count > 0:
-        print(f"總共關閉了 {closed_count} 個公告彈窗")
-    else:
-        print("未發現公告彈窗或已關閉")
+    # if closed_count > 0:
+    #     # print(f"總共關閉了 {closed_count} 個公告彈窗")
+    # else:
+    #     print("未發現公告彈窗或已關閉")
 
 
 def navigate_to_account_report(driver):
