@@ -157,18 +157,77 @@ def input_account_password(driver, account, password):
 
 def close_announcement_popup(driver):
     """
-    關閉公告彈窗
+    關閉公告彈窗(優先使用JS關閉,失敗則點擊按鈕)
     """
-    try:
-        print("檢查是否有公告彈窗...")
-        wait = WebDriverWait(driver, 10)
-        close_button = wait.until(
-            EC.element_to_be_clickable((By.XPATH, "//button[.//span[text()='確 認']]"))
-        )
-        close_button.click()
-        print("已關閉公告彈窗")
-        time.sleep(1)
-    except:
+    print("檢查是否有公告彈窗...")
+    closed_count = 0
+    max_attempts = 5  # 最多嘗試關閉5個公告
+    
+    for attempt in range(max_attempts):
+        try:
+            wait = WebDriverWait(driver, 3)  # 縮短等待時間
+            
+            # 先嘗試用 JavaScript 直接移除所有 modal 彈窗和遮罩層
+            try:
+                js_result = driver.execute_script("""
+                    var count = 0;
+                    // 移除所有彈窗
+                    var modals = document.querySelectorAll('.ant-modal-wrap');
+                    modals.forEach(function(modal) {
+                        modal.style.display = 'none';
+                        modal.remove();
+                        count++;
+                    });
+                    // 移除所有遮罩層
+                    var masks = document.querySelectorAll('.ant-modal-mask');
+                    masks.forEach(function(mask) {
+                        mask.style.display = 'none';
+                        mask.remove();
+                    });
+                    // 移除 body 的 overflow hidden 樣式(恢復滾動)
+                    document.body.style.overflow = '';
+                    return count;
+                """)
+                
+                if js_result > 0:
+                    closed_count += js_result
+                    print(f"已用 JS 關閉 {js_result} 個公告彈窗")
+                    time.sleep(1)  # 短暫等待
+                    continue
+            except Exception as js_error:
+                print(f"JS 關閉失敗,改用點擊: {js_error}")
+            
+            # 如果 JS 無法關閉,嘗試點擊新版公告彈窗按鈕
+            try:
+                close_button = wait.until(
+                    EC.element_to_be_clickable((By.XPATH, "//div[contains(@class, 'ant-modal')]//button[contains(@class, 'ant-btn-primary')][.//span[text()='確 認']]"))
+                )
+                close_button.click()
+                closed_count += 1
+                print(f"已點擊關閉第 {closed_count} 個公告彈窗(新版)")
+                time.sleep(1.5)  # 等待下一個彈窗出現
+                continue
+            except:
+                # 如果新版彈窗不存在,嘗試舊版
+                try:
+                    close_button = wait.until(
+                        EC.element_to_be_clickable((By.XPATH, "//button[.//span[text()='確 認']]"))
+                    )
+                    close_button.click()
+                    closed_count += 1
+                    print(f"已點擊關閉第 {closed_count} 個公告彈窗(舊版)")
+                    time.sleep(1.5)  # 等待下一個彈窗出現
+                    continue
+                except:
+                    # 沒有更多彈窗了
+                    break
+        except:
+            # 沒有更多彈窗了
+            break
+    
+    if closed_count > 0:
+        print(f"總共關閉了 {closed_count} 個公告彈窗")
+    else:
         print("未發現公告彈窗或已關閉")
 
 
@@ -187,6 +246,9 @@ def navigate_to_account_report(driver):
         account_report.click()
         # print("已點擊「帳務報表」")
         time.sleep(2)
+        
+        # 切換頁面後再次關閉可能出現的公告彈窗
+        close_announcement_popup(driver)
         
         # print("成功進入帳務報表頁面！")
         
@@ -589,65 +651,92 @@ def process_account(account_num, account, password, shared_data, lock):
         
         print(f"{prefix} 處理完成！")
         
-    except Exception as e:
-        print(f"{prefix} 發生錯誤: {e}")
-    finally:
+        # 只有成功才關閉瀏覽器
         if driver:
             try:
                 driver.quit()
             except:
                 pass
+        
+    except Exception as e:
+        print(f"{prefix} 發生錯誤: {e}")
+        print(f"{prefix} 保留瀏覽器視窗以便檢查問題...")
+        import traceback
+        traceback.print_exc()
+        # 發生錯誤時不關閉瀏覽器，讓使用者可以查看
 
 
 if __name__ == "__main__":
-    users = read_all_user_info()
+    try:
+        users = read_all_user_info()
 
-    if not users:
-        print("沒有任何有效帳號")
+        if not users:
+            print("沒有任何有效帳號")
+            input("\n按 Enter 鍵結束程式...")
+            sys.exit(1)
+
+        print(f"\n{'='*50}")
+        print(f"準備使用多線程處理 {len(users)} 個帳號")
+        print(f"{'='*50}\n")
+        
+        # 創建共享資料列表和線程鎖
+        shared_data = []
+        lock = threading.Lock()
+        
+        # 創建線程列表
+        threads = []
+        
+        # 為每個帳號創建一個線程
+        for idx, (account, password) in enumerate(users, 1):
+            thread = Thread(
+                target=process_account,
+                args=(idx, account, password, shared_data, lock),
+                name=f"Thread-{idx}"
+            )
+            threads.append(thread)
+            thread.start()
+            time.sleep(2)  # 避免同時啟動太多瀏覽器，間隔2秒
+        
+        # 等待所有線程完成
+        print(f"\n等待所有帳號處理完成...")
+        for thread in threads:
+            thread.join()
+        # 匯出所有資料到一個 Excel 檔案
+        if shared_data:
+            print(f"\n收集到 {len(shared_data)} 個帳號的資料")
+            for idx, acc_data in enumerate(shared_data, 1):
+                上週筆數 = len(acc_data["report_data"].get("上週", []))
+                本週筆數 = len(acc_data["report_data"].get("本週", []))
+                print(f"  帳號 {idx} ({acc_data['login_account']}): 上週 {上週筆數} 筆, 本週 {本週筆數} 筆")
+            
+            excel_path = export_to_excel(shared_data)
+            if excel_path:
+                print(f"\n所有資料已成功匯出到: {excel_path}")
+        else:
+            print("❌ 沒有任何資料可以匯出")
+        
+        print("\n5 秒後自動結束程式...")
+        time.sleep(5)
+        os._exit(0)
+        
+    except FileNotFoundError as e:
+        # 檔案不存在錯誤
+        print(f"\n{'='*50}")
+        print(f"❌ 錯誤：{e}")
+        print(f"{'='*50}\n")
+        input("\n按 Enter 鍵結束程式...")
         sys.exit(1)
+        
+    except Exception as e:
+        # 未預期的錯誤
+        print(f"\n{'='*50}")
+        print(f"❌ 程式執行時發生未預期的錯誤:")
+        print(f"{str(e)}")
+        print(f"{'='*50}\n")
+        import traceback
+        traceback.print_exc()
+        input("\n發生錯誤，按 Enter 鍵結束程式...")
+        sys.exit(1)
+        
 
-    print(f"\n{'='*50}")
-    print(f"準備使用多線程處理 {len(users)} 個帳號")
-    print(f"{'='*50}\n")
-    
-    # 創建共享資料列表和線程鎖
-    shared_data = []
-    lock = threading.Lock()
-    
-    # 創建線程列表
-    threads = []
-    
-    # 為每個帳號創建一個線程
-    for idx, (account, password) in enumerate(users, 1):
-        thread = Thread(
-            target=process_account,
-            args=(idx, account, password, shared_data, lock),
-            name=f"Thread-{idx}"
-        )
-        threads.append(thread)
-        thread.start()
-        time.sleep(2)  # 避免同時啟動太多瀏覽器，間隔2秒
-    
-    # 等待所有線程完成
-    print(f"\n等待所有帳號處理完成...")
-    for thread in threads:
-        thread.join()
-    # 匯出所有資料到一個 Excel 檔案
-    if shared_data:
-        print(f"\n收集到 {len(shared_data)} 個帳號的資料")
-        for idx, acc_data in enumerate(shared_data, 1):
-            上週筆數 = len(acc_data["report_data"].get("上週", []))
-            本週筆數 = len(acc_data["report_data"].get("本週", []))
-            print(f"  帳號 {idx} ({acc_data['login_account']}): 上週 {上週筆數} 筆, 本週 {本週筆數} 筆")
-        
-        excel_path = export_to_excel(shared_data)
-        if excel_path:
-            print(f"\n所有資料已成功匯出到: {excel_path}")
-    else:
-        print("❌ 沒有任何資料可以匯出")
-    
-    print("\n5 秒後自動結束程式...")
-    time.sleep(5)
-    os._exit(0)
-        
 
